@@ -2,7 +2,7 @@
 
 """
 Multibox
-1. Normalize(L2) the value of the distance?????
+1. Normalize(L1) the value of the distance?????
 2. compute loss
 """
 class MultiBox(object):
