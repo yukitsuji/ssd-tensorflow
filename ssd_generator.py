@@ -1,5 +1,11 @@
 #!/usr/bin/env python
+import os
 import sys
+import itertools
+import xml.etree.ElementTree as et
+import re
+import numpy as np
+
 sys.path.append("./")
 
 class Generator(obcjet):
@@ -28,8 +34,6 @@ class Generator(obcjet):
         imgfiles = [[self._images[p] for p in b] for b in batches]
 
         imgs = ImageLoader(imgfiles)
-
-        import itertools
         from resize import resize
 
         for p, imgs in itertools.izip(batches, imgs.load()):
@@ -66,7 +70,7 @@ class ImageLoader(object):
         img = img.convert("RGB")
         return img
 
-def extract_label_from_xml(xml):
+def extract_label_from_xml(xml_path):
     """
        xml : TODO: define
 
@@ -75,4 +79,16 @@ def extract_label_from_xml(xml):
        udacity-self-driving
        others
     """
+    tree = et.parse(xml_path)
+    root = tree.getroot()
+    folder = root.findall("folder")[0].text
+    filename = root.findall("filename")[0].text
+    filepath = folder + "/" + filename
+    objs = [obj for obj in root.findall("object")]
+    obj_name = []
+    obj_bndbox = []
+    return_data = []
+    for obj in objs:
+        imagepath = obj.findall("name")[0].text
+        obj_name.append(imagepath)
     pass
