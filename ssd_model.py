@@ -118,6 +118,8 @@ def ssd_model(sess, vggpath=None, image_shape=(300, 300), \
         extended_model = ExtendedLayer()
         extended_model.build_model(vgg.conv5_3, use_batchnorm=use_batchnorm, atrous=atrous, rate=rate, \
                                    is_training=phase_train, activation=activation, lr_mult=1, implement_atrous=implement_atrous)
+    initialized_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="extended_model")
+    sess.run(tf.variables_initializer(initialized_var))
 
     # with tf.variable_scope("multibox_layer"):
     #     from_layers = [vgg.conv4_3, extended_model.conv_7, extended_model.conv_8_2,
@@ -125,8 +127,7 @@ def ssd_model(sess, vggpath=None, image_shape=(300, 300), \
     #     multibox_layer = MultiboxLayer()
     #     multibox_layer.build_model(from_layers, num_classes=0, normalization=normalization)
     #
-    initialized_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="extended_model")
-    sess.run(tf.variables_initializer(initialized_var))
+
 
     return extended_model
 
@@ -162,6 +163,7 @@ class MultiboxLayer(object):
                 # create location prediction layer
                 loc_output_dim = 4 * prior_num
                 location_layer = convBNLayer(input_layer, use_batchnorm, is_training, input_layer.get_shape()[0], loc_output_dim, kernel_size, 1, name="loc_layer", activation=activation)
+                location_prediction = tf.reshape(location_layer, [-1, 4])
 
                 # create confidence prediction layer
                 conf_output_dim = num_classes * prior_num
