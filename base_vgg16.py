@@ -26,14 +26,14 @@ class Vgg16:
         """
         start_time = time.time()
         print("build model started")
-        rgb_scaled = rgb * 255.0
+        rgb_scaled = rgb * 1.0
 
         # Convert RGB to BGR
         red, green, blue = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
         bgr = tf.concat(axis=3, values=[
-            blue - VGG_MEAN[0],
-            green - VGG_MEAN[1],
-            red - VGG_MEAN[2],
+            blue,
+            green,
+            red,
         ])
 
         self.conv1_1 = self.conv_layer(bgr, "conv1_1")

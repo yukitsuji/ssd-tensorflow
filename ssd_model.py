@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import sys
+sys.path.append("/Users/tsujiyuuki/env_python/code/my_code/Data_Augmentation")
 import numpy as np
 from base_vgg16 import Vgg16 as Vgg
 import tensorflow as tf
@@ -26,43 +28,67 @@ def batch_norm(inputs, is_training, decay=0.9, eps=1e-5):
     else:
         return tf.nn.batch_normalization(inputs, pop_mean, pop_var, beta, gamma, eps)
 
-def convBNLayer(input_layer, use_batchnorm, is_training, input_dim, output_dim, kernel_size, stride, activation=tf.nn.relu, padding="SAME", name=""):
+def convBNLayer(input_layer, use_batchnorm, is_training, input_dim, output_dim, \
+                kernel_size, stride, activation=tf.nn.relu, padding="SAME", name="", atrous=False, rate=1):
     with tf.variable_scope("convBN" + name):
         w = tf.get_variable("weights", \
             shape=[kernel_size, kernel_size, input_dim, output_dim], initializer=tf.contrib.layers.xavier_initializer())
-        conv = tf.nn.conv2d(input_layer, w, strides=[1, stride, stride, 1], padding=padding)
 
-        if use_batchnorm != None:
+        if atrous:
+            conv = tf.nn.atrous_conv2d(input_layer, w, rate, padding="SAME")
+        else:
+            conv = tf.nn.conv2d(input_layer, w, strides=[1, stride, stride, 1], padding=padding)
+
+        if use_batchnorm:
             bn = batch_norm(conv, is_training)
             if activation != None:
                 return activation(conv, name="activation")
             return bn
 
+        b = tf.get_variable("bias", \
+            shape=[output_dim], initializer=tf.constant_initializer(0.0))
+        bias = tf.nn.bias_add(conv, b)
         if activation != None:
-            return activation(conv, name="activation")
-        return conv
+            return activation(bias, name="activation")
+        return bias
 
-def extended_model(input_layer, use_batchnorm=False, is_training=True, activation=tf.nn.relu, lr_mult=1):
-    # kernel_dim = [512, 256, 512, 128, 256, 128, 256, 128, 256]
-    conv_6 = convBNLayer(input_layer, use_batchnorm, is_training, 512, 1024, 3, 1, name="conv_6", activation=activation)
-    conv_7 = convBNLayer(conv_6, use_batchnorm, is_training, 1024, 1024, 1, 1, name="conv_7", activation=activation)
-    conv_8_1 = convBNLayer(conv_7, use_batchnorm, is_training, 1024, 256, 1, 1, name="conv_8_1", activation=activation)
-    conv_8_2 = convBNLayer(conv_8_1, use_batchnorm, is_training, 256, 512, 3, 2, name="conv_8_2", activation=activation)
-    conv_9_1 = convBNLayer(conv_8_2, use_batchnorm, is_training, 512, 128, 1, 1, name="conv_9_1", activation=activation)
-    conv_9_2 = convBNLayer(conv_9_1, use_batchnorm, is_training, 128, 256, 3, 2, name="conv_9_2", activation=activation)
-    conv_10_1 = convBNLayer(conv_9_2, use_batchnorm, is_training, 256, 128, 1, 1, name="conv_10_1", activation=activation)
-    conv_10_2 = convBNLayer(conv_10_1, use_batchnorm, is_training, 128, 256, 3, 1, name="conv_10_2", activation=activation, padding="VALID")
-    conv_11_1 = convBNLayer(conv_10_2, use_batchnorm, is_training, 256, 128, 1, 1, name="conv_11_1", activation=activation)
-    conv_11_2 = convBNLayer(conv_11_1, use_batchnorm, is_training, 128, 256, 3, 1, name="conv_11_2", activation=activation, padding="VALID")
-
-    return conv_11_2
+def maxpool2d(x, kernel=2, stride=1, name="", padding="SAME"):
+    """define max pooling layer"""
+    with tf.variable_scope("pool" + name):
+        return tf.nn.max_pool(
+            x,
+            ksize = [1, kernel, kernel, 1],
+            strides = [1, stride, stride, 1],
+            padding=padding)
 
 class ExtendedLayer(object):
     def __init__(self):
         pass
 
-    def build_model(self, input_layer, use_batchnorm=False, is_training=True, activation=tf.nn.relu, lr_mult=1):
-        self.conv_6 = convBNLayer(input_layer, use_batchnorm, is_training, 512, 1024, 3, 1, name="conv_6", activation=activation)
+    def build_model(self, input_layer, use_batchnorm=False, is_training=True, atrous=False, \
+                    rate=1, activation=tf.nn.relu, implement_atrous=False, lr_mult=1):
+        if implement_atrous:
+            if atrous:
+                self.pool_5 = maxpool2d(input_layer, kernel=3, stride=1, name="pool5", padding="SAME")
+            else:
+                self.pool_5 = maxpool2d(input_layer, kernel=2, stride=2, name="pool5", padding="SAME") #TODO: padding is valid or same
+
+            kernel_size = 3
+            if atrous:
+                rate *= 6
+                # pad = int(((kernel_size + (rate - 1) * (kernel_size - 1)) - 1) / 2)
+                self.conv_6 = convBNLayer(self.pool_5, use_batchnorm, is_training, 512, 1024, kernel_size, 1, \
+                                          name="conv_6", activation=tf.nn.relu, atrous=True, rate=rate)
+            else:
+                rate *= 3
+                # pad = int(((kernel_size + (rate - 1) * (kernel_size - 1)) - 1) / 2)
+                self.conv_6 = convBNLayer(self.pool_5, use_batchnorm, is_training, 512, 1024, kernel_size, 1, \
+                                          name="conv_6", activation=tf.nn.relu, atrous=True, rate=rate)
+        else:
+            self.pool_5 = maxpool2d(input_layer, kernel=3, stride=1, name="pool5", padding="SAME")
+            self.conv_6 = convBNLayer(self.pool_5, use_batchnorm, is_training, 512, 1024, 3, 1, \
+                                      name="conv_6", activation=tf.nn.relu, atrous=False, rate=rate)
+
         self.conv_7 = convBNLayer(self.conv_6, use_batchnorm, is_training, 1024, 1024, 1, 1, name="conv_7", activation=activation)
         self.conv_8_1 = convBNLayer(self.conv_7, use_batchnorm, is_training, 1024, 256, 1, 1, name="conv_8_1", activation=activation)
         self.conv_8_2 = convBNLayer(self.conv_8_1, use_batchnorm, is_training, 256, 512, 3, 2, name="conv_8_2", activation=activation)
@@ -73,9 +99,9 @@ class ExtendedLayer(object):
         self.conv_11_1 = convBNLayer(self.conv_10_2, use_batchnorm, is_training, 256, 128, 1, 1, name="conv_11_1", activation=activation)
         self.conv_11_2 = convBNLayer(self.conv_11_1, use_batchnorm, is_training, 128, 256, 3, 1, name="conv_11_2", activation=activation, padding="VALID")
 
-def ssd_model(sess, images, labels=None, vggpath=None, image_shape=(300, 300), \
-              is_training=None, use_batchnorm=None, activation=tf.nn.relu, \
-              num_classes=0, normalization=[]):
+def ssd_model(sess, vggpath=None, image_shape=(300, 300), \
+              is_training=None, use_batchnorm=False, activation=tf.nn.relu, \
+              num_classes=0, normalization=[], atrous=False, rate=1, implement_atrous=False):
     """
        1. input RGB images and labels
        2. edit images like [-1, image_shape[0], image_shape[1], 3]
@@ -89,16 +115,16 @@ def ssd_model(sess, images, labels=None, vggpath=None, image_shape=(300, 300), \
 
     with tf.variable_scope("extended_model") as scope:
         phase_train = tf.placeholder(tf.bool, name="phase_traing") if is_training else None
-        batchnorm = tf.placeholder(tf.bool, name="batchnorm") if use_batchnorm else None
         extended_model = ExtendedLayer()
-        extended_model.build_model(vgg.conv5_3, use_batchnorm=batchnorm, is_training=phase_train, activation=activation, lr_mult=1)
+        extended_model.build_model(vgg.conv5_3, use_batchnorm=use_batchnorm, atrous=atrous, rate=rate, \
+                                   is_training=phase_train, activation=activation, lr_mult=1, implement_atrous=implement_atrous)
 
-    with tf.variable_scope("multibox_layer"):
-        from_layers = [vgg.conv4_3, extended_model.conv_7, extended_model.conv_8_2,
-                       extended_model.conv_9_2, extended_model.conv_10_2, extended_model.conv_11_2]
-        multibox_layer = MultiboxLayer()
-        multibox_layer.build_model(from_layers, num_classes=0, normalization=normalization)
-
+    # with tf.variable_scope("multibox_layer"):
+    #     from_layers = [vgg.conv4_3, extended_model.conv_7, extended_model.conv_8_2,
+    #                    extended_model.conv_9_2, extended_model.conv_10_2, extended_model.conv_11_2]
+    #     multibox_layer = MultiboxLayer()
+    #     multibox_layer.build_model(from_layers, num_classes=0, normalization=normalization)
+    #
     initialized_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="extended_model")
     sess.run(tf.variables_initializer(initialized_var))
 
@@ -161,6 +187,6 @@ if __name__ == '__main__':
     batch_image = resize(batch_image, size=(300, 300))
 
     with tf.Session() as sess:
-        model = ssd_model(sess, batch_image, activation=None)
+        model = ssd_model(sess, batch_image, activation=None, atrous=False, rate=1, implement_atrous=False)
         print(vars(model))
         # tf.summary.scalar('model', model)
