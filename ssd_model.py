@@ -134,12 +134,13 @@ class MultiboxLayer(object):
     def __init__(self):
         pass
 
+    # TODO: validate this is correct or not
     def l2_normalization(self, input_layer, scale=20):
         return tf.nn.l2_normalize(input_layer, dim) * scale
 
     def createMultiBoxHead(self, from_layers, num_classes=0, normalizations=[], \
                            use_batchnorm=False, is_training=None, activation=None, \
-                           kernel_size=3, prior_boxes=[]):
+                           kernel_size=3, prior_boxes=[], kernel_sizes=[]):
         """
            # Args:
                from_layers(list)   : list of input layers
@@ -152,7 +153,7 @@ class MultiboxLayer(object):
             assert len(from_layers) == len(normalizations), "from_layers and normalizations should have same length"
 
         num_list = len(from_layers)
-        for index, layer, norm in zip(range(num_list), from_layers, normalizations):
+        for index, kernel_size, layer, norm in zip(range(num_list), kernel_sizes, from_layers, normalizations):
             input_layer = layer
             with tf.variable_scope("layer" + str(index+1)):
                 if norm > 0:
@@ -160,12 +161,16 @@ class MultiboxLayer(object):
                     input_layer = self.l2_normalization(input_layer, scale)
 
                 # create location prediction layer
-                loc_output_dim = 4 * prior_num
+                loc_output_dim = 4 * prior_num # (center_x, center_y, width, height)
                 location_layer = convBNLayer(input_layer, use_batchnorm, is_training, input_layer.get_shape()[0], loc_output_dim, kernel_size, 1, name="loc_layer", activation=activation)
+                # from shape : (batch, from_kernel, from_kernel, loc_output_dim)
+                # to         : (batch, )
+                location_pred = tf.reshape(location_layer, [-1, ])
 
                 # create confidence prediction layer
                 conf_output_dim = num_classes * prior_num
                 confidence_layer = convBNLayer(input_layer, use_batchnorm, is_training, input_layer.get_shape()[0], conf_output_dim, kernel_size, 1, name="conf_layer", activation=activation)
+                confidence_pred = tf.reshape(confidence_pred, [-1, ])
 
                 # Flatten each output
 
